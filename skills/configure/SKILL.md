@@ -45,7 +45,7 @@ Arguments passed: `$ARGUMENTS`
 ### No args — status
 1. `cat <state-dir>/.env` (mask the token: show first 4 chars). Say "not configured" if absent.
 2. `ip -brief addr` — list candidate bind addresses; flag which look like VPN/private (10.x, 100.64.x, fd..).
-3. For each peer in `PEER_ALLOW`: `curl -s --max-time 3 <url>.well-known/agent-card.json` and report reachable/unreachable + card name.
+3. For each peer in `PEER_ALLOW`: `curl -s --max-time 3 "${url%/}/.well-known/agent-card.json"` (strip any trailing slash first) and report reachable/unreachable + card name.
 
 ### `name <n>` · `bind <addr>` · `token <secret>` · `port <n>` · `timeout <s>` · `description <text>`
 Set the matching key; keep other lines; `mkdir -p` the directory. `token new` generates one: `openssl rand -hex 24` — tell the user to copy the same value to every peer.

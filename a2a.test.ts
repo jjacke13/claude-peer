@@ -20,7 +20,7 @@ test('parseSend: text only, ids carried', () => {
   if (!isRpcError(ok)) { expect(ok.text).toBe('hi\nthere'); expect(ok.contextId).toBe('c1'); expect(ok.msg.messageId).toBe('m1'); expect(ok.from).toBe('pi') }
   expect((parseSend({ message: { parts: [{ text: 'x' }] } }) as any).from).toBe('peer')
   expect((parseSend({}) as any).code).toBe(ERR.invalidParams)
-  expect((parseSend({ message: { parts: [{ url: 'http://x' }] } }) as any).code).toBe(ERR.unsupported)
+  expect((parseSend({ message: { parts: [{ url: 'http://x' }] } }) as any).code).toBe(ERR.contentType)
   expect((parseSend({ message: { parts: [{ text: '  ' }] } }) as any).code).toBe(ERR.invalidParams)
 })
 
@@ -34,8 +34,10 @@ test('TaskStore: create → wait → finish wakes waiter; timeout returns curren
   expect((await p).status.message?.parts[0]?.text).toBe('a')
   expect(done?.history.map(m => m.role)).toEqual(['ROLE_USER', 'ROLE_AGENT'])
   expect(s.finish(t.id, 'TASK_STATE_FAILED')).toBeUndefined()          // already terminal
-  const t2 = s.create(message('ROLE_USER', 'slow'))
+  const t2 = s.create(message('ROLE_USER', 'slow'), undefined, 'pi')
+  expect(t2.metadata?.from).toBe('pi')
   expect((await s.wait(t2.id, 20)).status.state).toBe('TASK_STATE_WORKING')
+  expect((s as any).waiters.has(t2.id)).toBe(false)   // timed-out waiter is dropped, not leaked
   await expect(s.wait('nope', 1)).rejects.toThrow('task not found')
 })
 
@@ -85,6 +87,7 @@ test('endpoint: card public, token gate, SendMessage blocks until reply_peer, Ge
     expect(c.result.status.state).toBe('TASK_STATE_CANCELED')
     expect((await (await post({ jsonrpc: '2.0', id: 11, method: 'Nope' })).json()).error.code).toBe(-32601)
     expect((await post({ jsonrpc: '2.0', id: 12, method: 'SendMessage', params: { message: { parts: [{ url: 'x' }] } } })).status).toBe(400)
+    expect((await fetch(base, { method: 'POST', headers: { authorization: 'Bearer secret' }, body: '{"pad":"' + 'x'.repeat(70_000) + '"}' })).status).toBe(413)
 
     // Blocking send that nobody answers → returns the working task after waitMs; askPeer reports it.
     const s2 = Bun.serve({ port: 0, fetch: makeHandler(cfg, new Store(), { token: 't', waitMs: 50, onInbound: () => {} }) })

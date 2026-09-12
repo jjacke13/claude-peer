@@ -5,17 +5,20 @@
 
 export const A2A_VERSION = '1.0'
 export const CARD_PATH = '/.well-known/agent-card.json'
+export const MAX_TEXT = 20_000            // chars per inbound message — it lands in a live session's context
+export const MAX_BODY = 64 * 1024          // bytes per HTTP body
+export const PEER_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/
 
 // JSON-RPC error codes: standard + A2A-specific (spec §5.4).
 export const ERR = {
-  parse: -32700, invalidRequest: -32600, methodNotFound: -32601, invalidParams: -32602, internal: -32603,
-  taskNotFound: -32001, taskNotCancelable: -32002, unsupported: -32004, versionNotSupported: -32009,
+  parse: -32700, invalidRequest: -32600, unauthorized: -32010, methodNotFound: -32601, invalidParams: -32602, internal: -32603,
+  taskNotFound: -32001, taskNotCancelable: -32002, unsupported: -32004, contentType: -32005, versionNotSupported: -32009,
 } as const
 
 export type Part = { text: string }
 export type Message = { messageId: string; role: 'ROLE_USER' | 'ROLE_AGENT'; parts: Part[]; contextId?: string; taskId?: string }
 export type TaskState = 'TASK_STATE_SUBMITTED' | 'TASK_STATE_WORKING' | 'TASK_STATE_COMPLETED' | 'TASK_STATE_FAILED' | 'TASK_STATE_CANCELED'
-export type Task = { id: string; contextId: string; status: { state: TaskState; message?: Message; timestamp: string }; history: Message[] }
+export type Task = { id: string; contextId: string; status: { state: TaskState; message?: Message; timestamp: string }; history: Message[]; metadata?: { from?: string } }
 
 export type PeerConfig = { name: string; description: string; url: string; version: string }
 
@@ -66,13 +69,14 @@ export function parseSend(params: any): { text: string; msg: Message; contextId?
   const m = params?.message
   if (!m || typeof m !== 'object') return { code: ERR.invalidParams, message: 'params.message required' }
   if (!Array.isArray(m.parts) || !m.parts.length) return { code: ERR.invalidParams, message: 'message.parts required' }
-  if (m.parts.some((p: any) => typeof p?.text !== 'string')) return { code: ERR.unsupported, message: 'only text parts are supported' }
+  if (m.parts.some((p: any) => typeof p?.text !== 'string')) return { code: ERR.contentType, message: 'only text parts are supported' }
   const text = m.parts.map((p: any) => p.text).join('\n').trim()
   if (!text) return { code: ERR.invalidParams, message: 'empty message' }
+  if (text.length > MAX_TEXT) return { code: ERR.invalidParams, message: `message longer than ${MAX_TEXT} chars` }
   const msg: Message = { messageId: String(m.messageId || newId()), role: 'ROLE_USER', parts: m.parts.map((p: any) => ({ text: p.text })) }
   // Sender name travels in Message.metadata (a Struct per spec). With a shared token it is a
   // claim, not proof — fine inside a private network; per-peer tokens are v2.
-  const from = typeof m.metadata?.from === 'string' ? m.metadata.from.slice(0, 64) : 'peer'
+  const from = typeof m.metadata?.from === 'string' && PEER_NAME_RE.test(m.metadata.from) ? m.metadata.from : 'peer'
   return { text, msg, contextId: typeof m.contextId === 'string' ? m.contextId : undefined, taskId: typeof m.taskId === 'string' ? m.taskId : undefined, from }
 }
 
@@ -85,11 +89,11 @@ export class TaskStore {
   private waiters = new Map<string, Array<(t: Task) => void>>()
   constructor(private max = 200) {}
 
-  create(userMsg: Message, contextId?: string): Task {
+  create(userMsg: Message, contextId?: string, from?: string): Task {
     const id = newId()
-    const t: Task = { id, contextId: contextId ?? newId(), status: { state: 'TASK_STATE_WORKING', timestamp: now() }, history: [{ ...userMsg, taskId: id }] }
+    const t: Task = { id, contextId: contextId ?? newId(), status: { state: 'TASK_STATE_WORKING', timestamp: now() }, history: [{ ...userMsg, taskId: id }], ...(from ? { metadata: { from } } : {}) }
     this.tasks.set(id, t)
-    if (this.tasks.size > this.max) this.tasks.delete(this.tasks.keys().next().value!)   // drop oldest
+    if (this.tasks.size > this.max) { const old = this.tasks.keys().next().value!; this.tasks.delete(old); this.waiters.delete(old) }   // drop oldest
     return t
   }
   get(id: string): Task | undefined { return this.tasks.get(id) }
@@ -113,12 +117,15 @@ export class TaskStore {
     if (!t) return Promise.reject(new Error('task not found'))
     if (TERMINAL.includes(t.status.state)) return Promise.resolve(t)
     return new Promise(resolve => {
-      const timer = setTimeout(() => { this.drop(id, resolve); resolve(this.tasks.get(id)!) }, timeoutMs)
       const w = (done: Task) => { clearTimeout(timer); resolve(done) }
+      const timer = setTimeout(() => { this.drop(id, w); resolve(this.tasks.get(id)!) }, timeoutMs)
       this.waiters.set(id, [...(this.waiters.get(id) ?? []), w])
     })
   }
-  private drop(id: string, fn: unknown) { this.waiters.set(id, (this.waiters.get(id) ?? []).filter(w => w !== fn)) }
+  private drop(id: string, fn: (t: Task) => void) {
+    const left = (this.waiters.get(id) ?? []).filter(w => w !== fn)
+    if (left.length) this.waiters.set(id, left); else this.waiters.delete(id)
+  }
 }
 const now = () => new Date().toISOString()
 

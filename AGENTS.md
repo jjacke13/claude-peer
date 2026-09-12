@@ -67,7 +67,8 @@ message, answers with `reply_peer`, A prints the answer.
 | `ask_peer failed: unknown peer` | add it to `PEER_ALLOW` on the asking side |
 | `peer HTTP 401` | tokens differ between machines |
 | `peer did not answer within N s` | the other session is busy/idle; its task stays pending — it can still answer later, re-ask with the same `context_id` |
-| `loop guard: answer the pending peer question first` | call `reply_peer` before asking anything |
+| `loop guard: answer the pending peer question first` | call `reply_peer` for that task first — a short "cannot answer that" is an acceptable answer; it clears the guard. Nothing else unsticks a forgotten task until the session restarts. |
+| asks abort early while the peer is still working | keep `PEER_TIMEOUT_S` equal on all machines (the asker aborts at its own timeout) |
 
 ## Rules for you, the agent
 

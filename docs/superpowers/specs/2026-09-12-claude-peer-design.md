@@ -1,4 +1,4 @@
-# claude-peer — A2A endpoint for a live Claude Code session (design note, NOT BUILT)
+# claude-peer — design note (2026-09-12). SUPERSEDED by the implementation: CLAUDE.md/README.md carry the real wire facts (card at agent-card.json; methods SendMessage/GetTask/CancelTask)
 
 **Date:** 2026-09-12 · **Status:** agreed in principle over voice (Vaios), build after wake-word decision · **Name:** `claude-peer` (`claude-a2a` is taken on GitHub by headless wrappers)
 
