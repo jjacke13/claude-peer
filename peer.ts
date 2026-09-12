@@ -5,7 +5,7 @@ import { A2A_VERSION, CARD_PATH, ERR, TaskStore, agentCard, isRpcError, parseRpc
 
 export type Hooks = {
   token: string                                   // shared bearer secret (required)
-  onInbound: (task: Task, text: string) => void   // deliver into the session
+  onInbound: (task: Task, text: string, from: string) => void   // deliver into the session
   waitMs: number                                  // how long SendMessage blocks for a reply
   log?: (line: string) => void
 }
@@ -36,8 +36,8 @@ export function makeHandler(cfg: PeerConfig, store: TaskStore, hooks: Hooks) {
         if (isRpcError(s)) return json(400, rpcError(rpc.id, s.code, s.message))
         if (s.taskId) return json(400, rpcError(rpc.id, ERR.unsupported, 'follow-up messages on an existing task are not supported; send a new message with the same contextId'))
         const task = store.create(s.msg, s.contextId)
-        log(`inbound task ${task.id.slice(0, 8)}: "${s.text.slice(0, 60)}"`)
-        try { hooks.onInbound(task, s.text) } catch (e) { store.finish(task.id, 'TASK_STATE_FAILED'); return json(500, rpcError(rpc.id, ERR.internal, `delivery failed: ${e}`)) }
+        log(`inbound task ${task.id.slice(0, 8)} from ${s.from}: "${s.text.slice(0, 60)}"`)
+        try { hooks.onInbound(task, s.text, s.from) } catch (e) { store.finish(task.id, 'TASK_STATE_FAILED'); return json(500, rpcError(rpc.id, ERR.internal, `delivery failed: ${e}`)) }
         const done = rpc.params?.configuration?.returnImmediately ? task : await store.wait(task.id, hooks.waitMs)
         return json(200, rpcResult(rpc.id, { task: done }))
       }
@@ -58,8 +58,8 @@ export function makeHandler(cfg: PeerConfig, store: TaskStore, hooks: Hooks) {
 }
 
 // Ask a peer (blocking SendMessage) and return its reply text. Throws on transport/RPC errors.
-export async function askPeer(url: string, token: string, text: string, contextId: string | undefined, timeoutMs: number): Promise<{ text: string; contextId?: string; taskId?: string }> {
-  const req = sendMessageRequest(text, contextId)
+export async function askPeer(url: string, token: string, text: string, contextId: string | undefined, timeoutMs: number, from?: string): Promise<{ text: string; contextId?: string; taskId?: string }> {
+  const req = sendMessageRequest(text, contextId, from)
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, 'A2A-Version': A2A_VERSION },

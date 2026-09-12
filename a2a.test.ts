@@ -15,9 +15,10 @@ test('parseRpc', () => {
 })
 
 test('parseSend: text only, ids carried', () => {
-  const ok = parseSend({ message: { messageId: 'm1', role: 'ROLE_USER', parts: [{ text: 'hi' }, { text: 'there' }], contextId: 'c1' } })
+  const ok = parseSend({ message: { messageId: 'm1', role: 'ROLE_USER', parts: [{ text: 'hi' }, { text: 'there' }], contextId: 'c1', metadata: { from: 'pi' } } })
   expect(isRpcError(ok)).toBe(false)
-  if (!isRpcError(ok)) { expect(ok.text).toBe('hi\nthere'); expect(ok.contextId).toBe('c1'); expect(ok.msg.messageId).toBe('m1') }
+  if (!isRpcError(ok)) { expect(ok.text).toBe('hi\nthere'); expect(ok.contextId).toBe('c1'); expect(ok.msg.messageId).toBe('m1'); expect(ok.from).toBe('pi') }
+  expect((parseSend({ message: { parts: [{ text: 'x' }] } }) as any).from).toBe('peer')
   expect((parseSend({}) as any).code).toBe(ERR.invalidParams)
   expect((parseSend({ message: { parts: [{ url: 'http://x' }] } }) as any).code).toBe(ERR.unsupported)
   expect((parseSend({ message: { parts: [{ text: '  ' }] } }) as any).code).toBe(ERR.invalidParams)
@@ -54,9 +55,9 @@ import { askPeer, makeHandler } from './peer.ts'
 
 test('endpoint: card public, token gate, SendMessage blocks until reply_peer, GetTask, CancelTask, askPeer round-trip', async () => {
   const store = new Store()
-  const inbound: Array<{ id: string; text: string }> = []
+  const inbound: Array<{ id: string; text: string; from: string }> = []
   const cfg = { name: 'A', description: 'test', url: 'http://127.0.0.1:0/', version: '0' }
-  const srv = Bun.serve({ port: 0, fetch: makeHandler(cfg, store, { token: 'secret', waitMs: 3000, onInbound: (t, text) => inbound.push({ id: t.id, text }) }) })
+  const srv = Bun.serve({ port: 0, fetch: makeHandler(cfg, store, { token: 'secret', waitMs: 3000, onInbound: (t, text, from) => inbound.push({ id: t.id, text, from }) }) })
   const base = `http://127.0.0.1:${srv.port}`
   try {
     const card = await (await fetch(`${base}/.well-known/agent-card.json`)).json()
@@ -66,9 +67,10 @@ test('endpoint: card public, token gate, SendMessage blocks until reply_peer, Ge
 
     // Ask from a "client" while the "session" answers after 100 ms.
     setTimeout(() => store.finish(inbound[0]!.id, 'TASK_STATE_COMPLETED', 'forty-two'), 100)
-    const r = await askPeer(`${base}/`, 'secret', 'meaning?', 'ctx1', 3000)
+    const r = await askPeer(`${base}/`, 'secret', 'meaning?', 'ctx1', 3000, 'laptop')
     expect(r.text).toBe('forty-two')
     expect(inbound[0]!.text).toBe('meaning?')
+    expect(inbound[0]!.from).toBe('laptop')
     expect(r.contextId).toBe('ctx1')
 
     const post = (m: unknown) => fetch(base, { method: 'POST', headers: { authorization: 'Bearer secret', 'content-type': 'application/json' }, body: JSON.stringify(m) })

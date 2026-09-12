@@ -62,7 +62,7 @@ export const rpcResult = (id: Rpc['id'], result: unknown) => ({ jsonrpc: '2.0', 
 export const rpcError = (id: Rpc['id'], code: number, msg: string) => ({ jsonrpc: '2.0', id, error: { code, message: msg } })
 
 // SendMessage params → the text and ids we act on. Only text parts are accepted.
-export function parseSend(params: any): { text: string; msg: Message; contextId?: string; taskId?: string } | RpcError {
+export function parseSend(params: any): { text: string; msg: Message; contextId?: string; taskId?: string; from: string } | RpcError {
   const m = params?.message
   if (!m || typeof m !== 'object') return { code: ERR.invalidParams, message: 'params.message required' }
   if (!Array.isArray(m.parts) || !m.parts.length) return { code: ERR.invalidParams, message: 'message.parts required' }
@@ -70,7 +70,10 @@ export function parseSend(params: any): { text: string; msg: Message; contextId?
   const text = m.parts.map((p: any) => p.text).join('\n').trim()
   if (!text) return { code: ERR.invalidParams, message: 'empty message' }
   const msg: Message = { messageId: String(m.messageId || newId()), role: 'ROLE_USER', parts: m.parts.map((p: any) => ({ text: p.text })) }
-  return { text, msg, contextId: typeof m.contextId === 'string' ? m.contextId : undefined, taskId: typeof m.taskId === 'string' ? m.taskId : undefined }
+  // Sender name travels in Message.metadata (a Struct per spec). With a shared token it is a
+  // claim, not proof — fine inside a private network; per-peer tokens are v2.
+  const from = typeof m.metadata?.from === 'string' ? m.metadata.from.slice(0, 64) : 'peer'
+  return { text, msg, contextId: typeof m.contextId === 'string' ? m.contextId : undefined, taskId: typeof m.taskId === 'string' ? m.taskId : undefined, from }
 }
 
 // ── tasks ───────────────────────────────────────────────────────────────────────────────
@@ -120,8 +123,10 @@ export class TaskStore {
 const now = () => new Date().toISOString()
 
 // ── client side ─────────────────────────────────────────────────────────────────────────
-export function sendMessageRequest(text: string, contextId?: string) {
-  return { jsonrpc: '2.0', id: newId(), method: 'SendMessage', params: { message: message('ROLE_USER', text, contextId ? { contextId } : {}), configuration: { returnImmediately: false } } }
+export function sendMessageRequest(text: string, contextId?: string, from?: string) {
+  const msg: any = message('ROLE_USER', text, contextId ? { contextId } : {})
+  if (from) msg.metadata = { from }
+  return { jsonrpc: '2.0', id: newId(), method: 'SendMessage', params: { message: msg, configuration: { returnImmediately: false } } }
 }
 
 // Peers: "name=http://host:port, name2=http://…" (COMMA-separated; names [A-Za-z0-9_-]).
