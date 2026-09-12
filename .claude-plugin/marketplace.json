@@ -1,0 +1,9 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-peer",
+  "description": "A2A endpoint for live Claude Code sessions",
+  "owner": { "name": "Vaios K" },
+  "plugins": [
+    { "name": "peer", "description": "A2A (Agent2Agent) endpoint for a live Claude Code session.", "category": "productivity", "source": "./" }
+  ]
+}
