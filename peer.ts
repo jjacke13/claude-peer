@@ -1,0 +1,77 @@
+// The A2A HTTP endpoint as a plain fetch handler (Bun.serve-compatible) plus the outbound
+// client. Pure enough to unit-test: I/O is injected via `hooks`. server.ts binds it to the
+// nospoon address and wires the MCP side.
+import { A2A_VERSION, CARD_PATH, ERR, TaskStore, agentCard, isRpcError, parseRpc, parseSend, replyText, rpcError, rpcResult, sendMessageRequest, type PeerConfig, type Task } from './a2a.ts'
+
+export type Hooks = {
+  token: string                                   // shared bearer secret (required)
+  onInbound: (task: Task, text: string) => void   // deliver into the session
+  waitMs: number                                  // how long SendMessage blocks for a reply
+  log?: (line: string) => void
+}
+
+export function makeHandler(cfg: PeerConfig, store: TaskStore, hooks: Hooks) {
+  const log = hooks.log ?? (() => {})
+  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'A2A-Version': A2A_VERSION } })
+
+  return async function fetch(req: Request): Promise<Response> {
+    const url = new URL(req.url)
+    if (req.method === 'GET' && url.pathname === CARD_PATH) return json(200, agentCard(cfg))   // card is public by spec
+
+    // Everything else is the JSON-RPC endpoint and needs the bearer token. Wrong/missing token
+    // gets the same 401 either way — nothing to enumerate.
+    if (req.headers.get('authorization') !== `Bearer ${hooks.token}`) return json(401, rpcError(null, ERR.invalidRequest, 'unauthorized'))
+    if (req.method !== 'POST') return json(405, rpcError(null, ERR.invalidRequest, 'POST JSON-RPC here'))
+    const ver = req.headers.get('a2a-version')
+    if (ver && ver !== A2A_VERSION && ver !== '0.3') return json(400, rpcError(null, ERR.versionNotSupported, `A2A-Version ${ver} not supported`))
+
+    let body: unknown
+    try { body = await req.json() } catch { return json(400, rpcError(null, ERR.parse, 'invalid JSON')) }
+    const rpc = parseRpc(body)
+    if (isRpcError(rpc)) return json(400, rpcError(null, rpc.code, rpc.message))
+
+    switch (rpc.method) {
+      case 'SendMessage': {
+        const s = parseSend(rpc.params)
+        if (isRpcError(s)) return json(400, rpcError(rpc.id, s.code, s.message))
+        if (s.taskId) return json(400, rpcError(rpc.id, ERR.unsupported, 'follow-up messages on an existing task are not supported; send a new message with the same contextId'))
+        const task = store.create(s.msg, s.contextId)
+        log(`inbound task ${task.id.slice(0, 8)}: "${s.text.slice(0, 60)}"`)
+        try { hooks.onInbound(task, s.text) } catch (e) { store.finish(task.id, 'TASK_STATE_FAILED'); return json(500, rpcError(rpc.id, ERR.internal, `delivery failed: ${e}`)) }
+        const done = rpc.params?.configuration?.returnImmediately ? task : await store.wait(task.id, hooks.waitMs)
+        return json(200, rpcResult(rpc.id, { task: done }))
+      }
+      case 'GetTask': {
+        const t = store.get(String(rpc.params?.id ?? ''))
+        return t ? json(200, rpcResult(rpc.id, t)) : json(404, rpcError(rpc.id, ERR.taskNotFound, 'Task not found'))
+      }
+      case 'CancelTask': {
+        const id = String(rpc.params?.id ?? '')
+        if (!store.get(id)) return json(404, rpcError(rpc.id, ERR.taskNotFound, 'Task not found'))
+        const t = store.finish(id, 'TASK_STATE_CANCELED')
+        return t ? json(200, rpcResult(rpc.id, t)) : json(400, rpcError(rpc.id, ERR.taskNotCancelable, 'task already finished'))
+      }
+      default:
+        return json(404, rpcError(rpc.id, ERR.methodNotFound, `${rpc.method} not supported`))
+    }
+  }
+}
+
+// Ask a peer (blocking SendMessage) and return its reply text. Throws on transport/RPC errors.
+export async function askPeer(url: string, token: string, text: string, contextId: string | undefined, timeoutMs: number): Promise<{ text: string; contextId?: string; taskId?: string }> {
+  const req = sendMessageRequest(text, contextId)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, 'A2A-Version': A2A_VERSION },
+    body: JSON.stringify(req),
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+  const body: any = await res.json().catch(() => ({}))
+  if (body?.error) throw new Error(`peer error ${body.error.code}: ${body.error.message}`)
+  if (!res.ok) throw new Error(`peer HTTP ${res.status}`)
+  const r = body?.result ?? {}
+  const t = replyText(r)
+  const state = r?.task?.status?.state
+  if (!t) throw new Error(state === 'TASK_STATE_WORKING' ? `peer did not answer within ${Math.round(timeoutMs / 1000)} s (task ${r.task.id} still working)` : `empty reply (${state ?? 'no task'})`)
+  return { text: t, contextId: r?.task?.contextId ?? r?.message?.contextId, taskId: r?.task?.id }
+}

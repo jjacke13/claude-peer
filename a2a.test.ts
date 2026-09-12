@@ -48,3 +48,45 @@ test('client helpers', () => {
   expect(replyText({ message: { role: 'ROLE_AGENT', parts: [{ text: 'direct' }] } })).toBe('direct')
   expect(replyText({})).toBe('')
 })
+
+import { TaskStore as Store } from './a2a.ts'
+import { askPeer, makeHandler } from './peer.ts'
+
+test('endpoint: card public, token gate, SendMessage blocks until reply_peer, GetTask, CancelTask, askPeer round-trip', async () => {
+  const store = new Store()
+  const inbound: Array<{ id: string; text: string }> = []
+  const cfg = { name: 'A', description: 'test', url: 'http://127.0.0.1:0/', version: '0' }
+  const srv = Bun.serve({ port: 0, fetch: makeHandler(cfg, store, { token: 'secret', waitMs: 3000, onInbound: (t, text) => inbound.push({ id: t.id, text }) }) })
+  const base = `http://127.0.0.1:${srv.port}`
+  try {
+    const card = await (await fetch(`${base}/.well-known/agent-card.json`)).json()
+    expect(card.name).toBe('A')
+    expect((await fetch(base, { method: 'POST', body: '{}' })).status).toBe(401)
+    expect((await fetch(base, { method: 'POST', headers: { authorization: 'Bearer wrong' }, body: '{}' })).status).toBe(401)
+
+    // Ask from a "client" while the "session" answers after 100 ms.
+    setTimeout(() => store.finish(inbound[0]!.id, 'TASK_STATE_COMPLETED', 'forty-two'), 100)
+    const r = await askPeer(`${base}/`, 'secret', 'meaning?', 'ctx1', 3000)
+    expect(r.text).toBe('forty-two')
+    expect(inbound[0]!.text).toBe('meaning?')
+    expect(r.contextId).toBe('ctx1')
+
+    const post = (m: unknown) => fetch(base, { method: 'POST', headers: { authorization: 'Bearer secret', 'content-type': 'application/json' }, body: JSON.stringify(m) })
+    const got = await (await post({ jsonrpc: '2.0', id: 7, method: 'GetTask', params: { id: r.taskId } })).json()
+    expect(got.result.status.state).toBe('TASK_STATE_COMPLETED')
+    expect((await (await post({ jsonrpc: '2.0', id: 8, method: 'GetTask', params: { id: 'nope' } })).json()).error.code).toBe(-32001)
+
+    // Non-blocking send, then cancel.
+    const nb = await (await post({ jsonrpc: '2.0', id: 9, method: 'SendMessage', params: { message: { role: 'ROLE_USER', parts: [{ text: 'later' }] }, configuration: { returnImmediately: true } } })).json()
+    expect(nb.result.task.status.state).toBe('TASK_STATE_WORKING')
+    const c = await (await post({ jsonrpc: '2.0', id: 10, method: 'CancelTask', params: { id: nb.result.task.id } })).json()
+    expect(c.result.status.state).toBe('TASK_STATE_CANCELED')
+    expect((await (await post({ jsonrpc: '2.0', id: 11, method: 'Nope' })).json()).error.code).toBe(-32601)
+    expect((await post({ jsonrpc: '2.0', id: 12, method: 'SendMessage', params: { message: { parts: [{ url: 'x' }] } } })).status).toBe(400)
+
+    // Blocking send that nobody answers → returns the working task after waitMs; askPeer reports it.
+    const s2 = Bun.serve({ port: 0, fetch: makeHandler(cfg, new Store(), { token: 't', waitMs: 50, onInbound: () => {} }) })
+    await expect(askPeer(`http://127.0.0.1:${s2.port}/`, 't', 'q', undefined, 3000)).rejects.toThrow('still working')
+    s2.stop(true)
+  } finally { srv.stop(true) }
+})
