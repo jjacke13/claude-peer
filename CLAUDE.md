@@ -11,7 +11,7 @@ over nospoon: `ask_peer box` → answered. Transfer gotcha: bundle clone needs `
   `/.well-known/agent-card.json` with `supportedInterfaces[{url,protocolBinding:"JSONRPC",protocolVersion:"1.0"}]`;
   header `A2A-Version: 1.0`; errors -32001 TaskNotFound, -32004 Unsupported, -32009 Version.
 - Sender identity = `Message.metadata.from` (claim; shared token). Loop guard = ask refused while
-  any inbound task is pending. Blocking SendMessage waits `PEER_TIMEOUT_S` then returns WORKING.
+  any inbound task is pending. Blocking SendMessage waits min(`PEER_TIMEOUT_S`, BLOCK_MS=120 s) then returns WORKING; **0.3.2:** `askPeer` then polls GetTask every 5 s until the task completes or `PEER_TIMEOUT_S` (laptop: 1800) — because Bun fetch dies at 5 min and Bun.serve `idleTimeout` maxes at 255 s (found live 2026-09-13: a 5-min worker task → "The operation timed out"). GetTask returns the bare Task, not `{task}`.
 - Smoke script (two stdio servers on loopback, driven over JSON-RPC): see git history / scratch;
   `bun test` covers protocol + endpoint.
 - **Trust levels (2026-09-13):** `PEER_ALLOW=name=url:trusted` → inbound from that name AND that host

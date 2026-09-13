@@ -95,7 +95,7 @@ test('endpoint: card public, token gate, SendMessage blocks until reply_peer, Ge
 
     // Blocking send that nobody answers → returns the working task after waitMs; askPeer reports it.
     const s2 = Bun.serve({ port: 0, fetch: makeHandler(cfg, new Store(), { token: 't', waitMs: 50, onInbound: () => {} }) })
-    await expect(askPeer(`http://127.0.0.1:${s2.port}/`, 't', 'q', undefined, 3000)).rejects.toThrow('still working')
+    await expect(askPeer(`http://127.0.0.1:${s2.port}/`, 't', 'q', undefined, 300, undefined, 50)).rejects.toThrow('still working')   // polls, then gives up at the deadline
     s2.stop(true)
   } finally { srv.stop(true) }
 })
@@ -118,4 +118,18 @@ test('local registry: live peers listed as trusted, stale removed, self skipped,
   expect(() => register(dir, { name: 'hades', url: 'http://127.0.0.1:7513/', pid: 3, project: '/p/other', ts: '' }, alive)).toThrow(/already running/)
   off()
   expect(localPeers(dir, 'hades', alive).size).toBe(0)
+})
+
+test('askPeer polls GetTask when the peer answers after the blocking window', async () => {
+  const store = new Store()
+  const cfg = { name: 'B', description: 'test', url: 'http://127.0.0.1:0/', version: '0' }
+  let taskId = ''
+  const srv = Bun.serve({ port: 0, fetch: makeHandler(cfg, store, { token: 't', waitMs: 100, onInbound: t => { taskId = t.id }, remoteIp: () => '127.0.0.1' }) })
+  try {
+    setTimeout(() => store.finish(taskId, 'TASK_STATE_COMPLETED', 'late answer'), 400)   // after waitMs, before deadline
+    const r = await askPeer(`http://127.0.0.1:${srv.port}/`, 't', 'slow question', undefined, 5000, 'A', 100)
+    expect(r.text).toBe('late answer')
+    expect(r.taskId).toBe(taskId)
+    await expect(askPeer(`http://127.0.0.1:${srv.port}/`, 't', 'never answered', undefined, 500, 'A', 100)).rejects.toThrow(/still working/)
+  } finally { srv.stop(true) }
 })

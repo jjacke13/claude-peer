@@ -15,7 +15,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { TaskStore, parsePeers, type Peer, type Task } from './a2a.ts'
 import { localPeers, register } from './local.ts'
-import { askPeer, makeHandler } from './peer.ts'
+import { BLOCK_MS, askPeer, makeHandler } from './peer.ts'
 
 const STATE_DIR = process.env.PEER_STATE_DIR
   ?? join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'channels', 'peer')
@@ -148,7 +148,8 @@ function onInbound(task: Task, text: string, peer: string, remoteIp: string): vo
 
 const http = Bun.serve({
   hostname: BIND, port: PORT,
-  fetch: makeHandler({ name: NAME, description: DESCRIPTION, url: URL_, version: '0.1.0' }, store, { token: TOKEN, waitMs: TIMEOUT_MS, onInbound, log, remoteIp: req => http.requestIP(req)?.address ?? '' }),
+  idleTimeout: 255,   // Bun max; a blocking SendMessage holds the connection up to BLOCK_MS, longer tasks are polled
+  fetch: makeHandler({ name: NAME, description: DESCRIPTION, url: URL_, version: '0.1.0' }, store, { token: TOKEN, waitMs: Math.min(TIMEOUT_MS, BLOCK_MS), onInbound, log, remoteIp: req => http.requestIP(req)?.address ?? '' }),
   error(e) { log(`http error: ${e}`); return new Response('error', { status: 500 }) },
 })
 

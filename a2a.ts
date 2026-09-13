@@ -157,3 +157,7 @@ export function replyText(result: any): string {
   if (!t) return ''
   return textOf(t.status?.message) || textOf([...(t.history ?? [])].reverse().find((m: Message) => m.role === 'ROLE_AGENT'))
 }
+
+export function getTaskRequest(id: string) {
+  return { jsonrpc: '2.0', id: newId(), method: 'GetTask', params: { id } }
+}

@@ -1,7 +1,7 @@
 // The A2A HTTP endpoint as a plain fetch handler (Bun.serve-compatible) plus the outbound
 // client. Pure enough to unit-test: I/O is injected via `hooks`. server.ts binds it to the
 // nospoon address and wires the MCP side.
-import { A2A_VERSION, CARD_PATH, ERR, MAX_BODY, TaskStore, agentCard, isRpcError, parseRpc, parseSend, replyText, rpcError, rpcResult, sendMessageRequest, type PeerConfig, type Task } from './a2a.ts'
+import { A2A_VERSION, CARD_PATH, ERR, MAX_BODY, TaskStore, agentCard, isRpcError, parseRpc, parseSend, replyText, rpcError, rpcResult, sendMessageRequest, getTaskRequest, type PeerConfig, type Task } from './a2a.ts'
 import { timingSafeEqual } from 'crypto'
 
 export type Hooks = {
@@ -71,21 +71,32 @@ export function makeHandler(cfg: PeerConfig, store: TaskStore, hooks: Hooks) {
   }
 }
 
-// Ask a peer (blocking SendMessage) and return its reply text. Throws on transport/RPC errors.
-export async function askPeer(url: string, token: string, text: string, contextId: string | undefined, timeoutMs: number, from?: string): Promise<{ text: string; contextId?: string; taskId?: string }> {
-  const req = sendMessageRequest(text, contextId, from)
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, 'A2A-Version': A2A_VERSION },
-    body: JSON.stringify(req),
-    signal: AbortSignal.timeout(timeoutMs),
-  })
-  const body: any = await res.json().catch(() => ({}))
-  if (body?.error) throw new Error(`peer error ${body.error.code}: ${body.error.message}`)
-  if (!res.ok) throw new Error(`peer HTTP ${res.status}`)
-  const r = body?.result ?? {}
+// Ask a peer and return its reply text. SendMessage blocks for the peer's window (BLOCK_MS at
+// most — Bun's fetch gives up at 5 min and Bun.serve at 255 s idle); a task still WORKING after
+// that is polled with GetTask every POLL_MS until it completes or timeoutMs runs out.
+export const BLOCK_MS = 120_000
+const POLL_MS = 5_000
+export async function askPeer(url: string, token: string, text: string, contextId: string | undefined, timeoutMs: number, from?: string, pollMs = POLL_MS): Promise<{ text: string; contextId?: string; taskId?: string }> {
+  const deadline = Date.now() + timeoutMs
+  const post = async (req: unknown, ms: number): Promise<any> => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, 'A2A-Version': A2A_VERSION },
+      body: JSON.stringify(req),
+      signal: AbortSignal.timeout(ms),
+    })
+    const body: any = await res.json().catch(() => ({}))
+    if (body?.error) throw new Error(`peer error ${body.error.code}: ${body.error.message}`)
+    if (!res.ok) throw new Error(`peer HTTP ${res.status}`)
+    return body?.result ?? {}
+  }
+  let r = await post(sendMessageRequest(text, contextId, from), Math.min(BLOCK_MS, timeoutMs) + 10_000)
+  while (['TASK_STATE_WORKING', 'TASK_STATE_SUBMITTED'].includes(r?.task?.status?.state)) {
+    if (Date.now() > deadline) throw new Error(`peer did not answer within ${Math.round(timeoutMs / 1000)} s (task ${r.task.id} still working)`)
+    await Bun.sleep(pollMs)
+    r = { task: await post(getTaskRequest(r.task.id), 30_000) }   // GetTask returns the Task itself
+  }
   const t = replyText(r)
-  const state = r?.task?.status?.state
-  if (!t) throw new Error(state === 'TASK_STATE_WORKING' ? `peer did not answer within ${Math.round(timeoutMs / 1000)} s (task ${r.task.id} still working)` : `empty reply (${state ?? 'no task'})`)
+  if (!t) throw new Error(`empty reply (${r?.task?.status?.state ?? 'no task'})`)
   return { text: t, contextId: r?.task?.contextId ?? r?.message?.contextId, taskId: r?.task?.id }
 }
