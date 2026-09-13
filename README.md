@@ -82,6 +82,18 @@ lists it in `peers` as **trusted** (same user, same machine) and can `ask_peer` 
 removed on exit; stale ones (dead pid) are swept on sight. A second session with a name already
 live refuses to start. Explicit `PEER_ALLOW` entries win over registry entries of the same name.
 
+`/peer:configure project <name> <port>` also drops a launcher at `./.claude/worker`:
+
+```
+.claude/worker          # start the worker: tmux session <name>, auto mode, peer plugin only, resumes last session
+.claude/worker --stop   # kill it
+.claude/worker --fg     # run in this terminal
+```
+
+It disables the talk/simplex plugins for the worker (`enabledPlugins` is global, and a worker's
+talk server would steal the hold-to-talk key from the main session). First launch in a repo:
+`tmux attach -t <name>`, answer the folder-trust and dev-channels prompts once, `Ctrl-b d`.
+
 ## Security model
 
 Transport security comes from the VPN (encryption + who can reach the address). The bearer

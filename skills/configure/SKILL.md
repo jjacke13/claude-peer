@@ -11,6 +11,8 @@ allowed-tools:
   - Bash(ip *)
   - Bash(curl *)
   - Bash(openssl rand *)
+  - Bash(cp *)
+  - Bash(chmod *)
 ---
 
 # /peer:configure — A2A peer setup
@@ -65,7 +67,11 @@ The token and everything else are inherited from the global file. Sessions launc
 directory bind `127.0.0.1:<port>` and appear automatically in every other local session's
 `peers` list (as trusted — same user, same machine) via `<state-dir>/local/<name>.json`, which
 is removed when the session exits. Pick a unique name and a free port per project (7501, 7502…).
-Tell the user to restart the session in that project for it to take effect.
+Then install the launcher: `mkdir -p ./.claude && cp "${CLAUDE_PLUGIN_ROOT}/bin/worker" ./.claude/worker && chmod +x ./.claude/worker`.
+Tell the user: start the worker with `.claude/worker` (detached tmux session named `<name>`, auto mode,
+peer plugin only, resumes the repo's last session), `.claude/worker --stop` to stop it, `--fg` to run it
+in the terminal; the first launch in a repo still asks the folder-trust question and the dev-channels
+notice once — `tmux attach -t <name>`, answer, Ctrl-b d.
 
 ---
 

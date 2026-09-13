@@ -51,6 +51,7 @@ To let a main session delegate to sessions in other repos on this machine:
 2. Launch Claude in that repo with the plugin (same flag as §3). It registers itself in
    `~/.claude/channels/peer/local/`.
 3. In the main session, `peers` now lists it as `(local session in <dir>, trusted)`; `ask_peer <name>`
+   Launch with `.claude/worker` (written by the same skill; `--stop`, `--fg`). It disables the talk/simplex plugins for the worker — a worker's talk server would steal the main session's hold-to-talk key.
    assigns it work. Nothing to add to `PEER_ALLOW`.
 
 Check: `ls ~/.claude/channels/peer/local/` shows one JSON per running session; a stale file

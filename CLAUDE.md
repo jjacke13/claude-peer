@@ -30,3 +30,7 @@ Multi-peer already works (`PEER_ALLOW` is comma-separated; star topology). Two f
    Replace with hop tracking: `Message.metadata.via = ["laptop","box"]`; refuse only when the
    target (or self) is already in `via`; cap depth (e.g. 4). Keep the "answer first" rule for
    direct A↔B cycles.
+- **0.3.5 launcher:** `bin/worker` (standalone bash; copied to `<repo>/.claude/worker` by the
+  `project` skill): tmux session = PEER_NAME, `--continue` when the repo's `~/.claude/projects/<slug>`
+  has a jsonl, `--settings '{"enabledPlugins":{talk:false,simplex:false}}'`, `--stop`/`--fg`.
+  Validated on peer-lab 2026-09-13 (resumed the morning session). Slug = path with `/ _ .` → `-`.

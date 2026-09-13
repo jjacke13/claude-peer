@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Launch THIS repo's worker session (claude-peer). Installed into <repo>/.claude/worker by
+# `/peer:configure project <name> <port>`; standalone, no dependency on the plugin path.
+#
+#   .claude/worker          start (or re-attach to) the worker in a detached tmux session
+#   .claude/worker --fg     run it in this terminal instead
+#   .claude/worker --stop   kill the tmux session
+#
+# What it fixes in one place: auto mode, peer plugin only (the talk/simplex plugins would steal
+# the hold-to-talk key / the SimpleX daemon from the main session), resume of this repo's last
+# session when one exists, tmux session named after PEER_NAME. First launch in a repo still
+# shows Claude Code's folder-trust prompt and the dev-channels notice — answer them once in
+# `tmux attach -t <name>` (Ctrl-b d to detach).
+set -euo pipefail
+here="$(cd "$(dirname "$0")/.." && pwd)"
+env_file="$here/.claude/peer.env"
+name="$(sed -n 's/^PEER_NAME=//p' "$env_file" 2>/dev/null | tr -d '[:space:]')"
+[ -n "$name" ] || { echo "PEER_NAME missing in $env_file — run /peer:configure project <name> <port> first" >&2; exit 1; }
+
+case "${1:-}" in
+  --stop) tmux kill-session -t "$name" 2>/dev/null && echo "stopped worker '$name'" || echo "worker '$name' was not running"; exit 0 ;;
+  --fg) shift
+    # Resume this repo's last Claude session if it has one (Claude keys sessions by the cwd path).
+    slug="$(printf '%s' "$here" | sed 's#[/_.]#-#g')"
+    resume=()
+    ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$slug"/*.jsonl >/dev/null 2>&1 && resume=(--continue)
+    cd "$here"
+    exec claude --permission-mode auto "${resume[@]}" \
+      --settings '{"enabledPlugins":{"talk@claude-talk":false,"simplex@claude-simplex":false}}' \
+      --dangerously-load-development-channels plugin:peer@claude-peer "$@" ;;
+  --help|-h) sed -n '2,11p' "$0"; exit 0 ;;
+esac
+
+if tmux has-session -t "$name" 2>/dev/null; then
+  echo "worker '$name' already running — tmux attach -t $name"
+  exit 0
+fi
+tmux new-session -d -s "$name" -c "$here" "exec '$0' --fg $*"
+echo "worker '$name' started in tmux (project $here) — first time: tmux attach -t $name, answer the prompts, Ctrl-b d"
