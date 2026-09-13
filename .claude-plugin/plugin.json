@@ -1,6 +1,6 @@
 {
   "name": "peer",
   "description": "A2A (Agent2Agent) endpoint for a live Claude Code session — sessions on different machines ask each other questions over your own network. Configure with /peer:configure.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "keywords": ["a2a", "agent2agent", "channel", "mcp", "p2p"]
 }

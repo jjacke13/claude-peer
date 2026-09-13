@@ -138,7 +138,7 @@ export function sendMessageRequest(text: string, contextId?: string, from?: stri
 
 // Peers: "name=http://host:port[:trusted], …" (COMMA-separated; names [A-Za-z0-9_-]).
 // trusted = that peer may assign us tasks, not only ask questions (see README "Trust levels").
-export type Peer = { url: string; trusted: boolean; host: string }
+export type Peer = { url: string; trusted: boolean; host: string; local?: boolean }   // local = this machine's registry
 export function parsePeers(raw: string | undefined): Map<string, Peer> {
   const out = new Map<string, Peer>()
   for (const item of (raw ?? '').split(',')) {

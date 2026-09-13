@@ -30,7 +30,7 @@ export function localPeers(dir: string, self: string, alive = pidAlive): Map<str
     if (!e) { try { unlinkSync(file) } catch {}; continue }
     if (!alive(e.pid)) { try { unlinkSync(file) } catch {}; continue }
     if (e.name === self) continue
-    out.set(e.name, { url: e.url, trusted: true, host: new URL(e.url).hostname, project: e.project })
+    out.set(e.name, { url: e.url, trusted: true, host: new URL(e.url).hostname, local: true, project: e.project })
   }
   return out
 }

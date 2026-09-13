@@ -113,7 +113,7 @@ test('local registry: live peers listed as trusted, stale removed, self skipped,
   register(dir, { name: 'dead', url: 'http://127.0.0.1:7512/', pid: 999, project: '/p/dead', ts: '' }, alive)
   const seen = localPeers(dir, 'main', alive)
   expect([...seen.keys()]).toEqual(['hades'])
-  expect(seen.get('hades')).toEqual({ url: 'http://127.0.0.1:7511/', trusted: true, host: '127.0.0.1', project: '/p/hades' })
+  expect(seen.get('hades')).toEqual({ url: 'http://127.0.0.1:7511/', trusted: true, host: '127.0.0.1', local: true, project: '/p/hades' })
   expect(readdirSync(dir).sort()).toEqual(['hades.json', 'main.json'])   // dead.json swept
   expect(() => register(dir, { name: 'hades', url: 'http://127.0.0.1:7513/', pid: 3, project: '/p/other', ts: '' }, alive)).toThrow(/already running/)
   off()

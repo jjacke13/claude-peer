@@ -135,7 +135,10 @@ function onInbound(task: Task, text: string, peer: string, remoteIp: string): vo
   // Trusted only if the user configured that name as trusted AND the request came from that
   // peer's configured host — the name in the message is a claim, the source address is not.
   const cfg = allPeers().get(peer)
-  const trusted = !!cfg?.trusted && !!remoteIp && (remoteIp === cfg.host || remoteIp === `::ffff:${cfg.host}`)
+  const fromHost = !!remoteIp && (remoteIp === cfg?.host || remoteIp === `::ffff:${cfg?.host}`)
+  // A registry (same-machine) peer bound to a VPN address still reaches us over loopback.
+  const fromLoopback = !!cfg?.local && /^(127\.\d+\.\d+\.\d+|::1|::ffff:127\.\d+\.\d+\.\d+)$/.test(remoteIp)
+  const trusted = !!cfg?.trusted && (fromHost || fromLoopback)
   if (cfg?.trusted && !trusted) log(`task ${task.id.slice(0, 8)} claims trusted peer "${peer}" but came from ${remoteIp || '?'} (expected ${cfg.host}) — treated as untrusted`)
   mcp.notification({
     method: 'notifications/claude/channel',
