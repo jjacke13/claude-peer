@@ -155,16 +155,29 @@ function onInbound(task: Task, text: string, peer: string, remoteIp: string): vo
   }).catch(e => log(`failed to deliver to Claude: ${e}`))
 }
 
-const http = Bun.serve({
+// Exit + resume race: the previous session's server may still hold the port / the registry
+// name for a few seconds. Retry both for a while instead of dying on the first attempt.
+const START_RETRY_MS = 20_000, START_STEP_MS = 1_000
+async function retrying<T>(what: string, fn: () => T): Promise<T> {
+  const t0 = Date.now()
+  for (;;) {
+    try { return fn() } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (Date.now() - t0 > START_RETRY_MS) { log(`${what}: ${msg}`); process.exit(1) }
+      if (Date.now() - t0 < START_STEP_MS * 1.5) log(`${what}: ${msg.split('\n')[0]} — waiting for the previous session to let go`)
+      await Bun.sleep(START_STEP_MS)
+    }
+  }
+}
+
+const http = await retrying(`cannot listen on ${URL_}`, () => Bun.serve({
   hostname: BIND, port: PORT,
   idleTimeout: 255,   // Bun max; a blocking SendMessage holds the connection up to BLOCK_MS, longer tasks are polled
   fetch: makeHandler({ name: NAME, description: DESCRIPTION, url: URL_, version: '0.1.0' }, store, { token: TOKEN, waitMs: Math.min(TIMEOUT_MS, BLOCK_MS), onInbound, log, remoteIp: req => http.requestIP(req)?.address ?? '' }),
   error(e) { log(`http error: ${e}`); return new Response('error', { status: 500 }) },
-})
+}))
 
-let unregister = () => {}
-try { unregister = register(LOCAL_DIR, { name: NAME, url: URL_, pid: process.pid, project: PROJECT_DIR, ts: new Date().toISOString() }) }
-catch (e) { log(e instanceof Error ? e.message : String(e)); http.stop(true); process.exit(1) }
+const unregister = await retrying('cannot register', () => register(LOCAL_DIR, { name: NAME, url: URL_, pid: process.pid, project: PROJECT_DIR, ts: new Date().toISOString() }))
 
 await mcp.connect(new StdioServerTransport())
 log(`ready: ${NAME} listening on ${URL_} · peers: ${[...PEERS.keys()].join(', ') || 'none'}${trustedNames.length ? ` · trusted: ${trustedNames.join(', ')}` : ''}`)
