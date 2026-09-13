@@ -92,3 +92,12 @@ claude plugin marketplace add jjacke13/claude-peer
 claude plugin install peer@claude-peer
 claude --dangerously-load-development-channels plugin:peer@claude-peer
 ```
+
+## Copying to another machine without GitHub
+
+```bash
+git bundle create ~/claude-peer.bundle main            # on the source machine
+scp ~/claude-peer.bundle user@peer:~/
+git clone -b main ~/claude-peer.bundle ~/claude-peer    # on the peer — `-b main` matters: a plain clone lands on an EMPTY master
+cd ~/claude-peer && bun install
+```
