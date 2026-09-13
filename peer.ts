@@ -76,7 +76,7 @@ export function makeHandler(cfg: PeerConfig, store: TaskStore, hooks: Hooks) {
 // that is polled with GetTask every POLL_MS until it completes or timeoutMs runs out.
 export const BLOCK_MS = 120_000
 const POLL_MS = 5_000
-export async function askPeer(url: string, token: string, text: string, contextId: string | undefined, timeoutMs: number, from?: string, pollMs = POLL_MS): Promise<{ text: string; contextId?: string; taskId?: string }> {
+export async function askPeer(url: string, token: string, text: string, contextId: string | undefined, timeoutMs: number, from?: string, pollMs = POLL_MS, onPoll?: (taskId: string) => void): Promise<{ text: string; contextId?: string; taskId?: string }> {
   const deadline = Date.now() + timeoutMs
   const post = async (req: unknown, ms: number): Promise<any> => {
     const res = await fetch(url, {
@@ -94,6 +94,7 @@ export async function askPeer(url: string, token: string, text: string, contextI
   while (['TASK_STATE_WORKING', 'TASK_STATE_SUBMITTED'].includes(r?.task?.status?.state)) {
     if (Date.now() > deadline) throw new Error(`peer did not answer within ${Math.round(timeoutMs / 1000)} s (task ${r.task.id} still working)`)
     await Bun.sleep(pollMs)
+    onPoll?.(r.task.id)
     r = { task: await post(getTaskRequest(r.task.id), 30_000) }   // GetTask returns the Task itself
   }
   const t = replyText(r)

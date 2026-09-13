@@ -113,7 +113,16 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         if (!url) throw new Error(`unknown peer "${name}" — available: ${[...peers.keys()].join(', ') || 'none'}`)
         const text = String(a.text ?? '').trim()
         if (!text) throw new Error('text is empty')
-        const r = await askPeer(url, TOKEN, text, typeof a.context_id === 'string' ? a.context_id : undefined, TIMEOUT_MS, NAME)
+        // Claude Code aborts a tool that stays silent for 30 min: report progress while we poll.
+        const token = (req.params as any)._meta?.progressToken
+        const t0 = Date.now()
+        let lastProgress = t0
+        const onPoll = (taskId: string) => {
+          if (token === undefined || Date.now() - lastProgress < 30_000) return
+          lastProgress = Date.now()
+          mcp.notification({ method: 'notifications/progress', params: { progressToken: token, progress: Math.round((Date.now() - t0) / 1000), message: `${name} still working on task ${taskId.slice(0, 8)} (${Math.round((Date.now() - t0) / 60_000)} min)` } }).catch(() => {})
+        }
+        const r = await askPeer(url, TOKEN, text, typeof a.context_id === 'string' ? a.context_id : undefined, TIMEOUT_MS, NAME, undefined, onPoll)
         return ok(`${name} answered (context_id ${r.contextId ?? '-'}):\n\n${r.text}`)
       }
       case 'peers':
