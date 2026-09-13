@@ -19,3 +19,13 @@ over nospoon: `ask_peer box` → answered. Transfer gotcha: bundle clone needs `
   Untrusted = answers only. Source-IP check via `server.requestIP` (name is a claim).
   **Trusted delegation LIVE 2026-09-13:** laptop→box "write+run a script" done under box auto mode.
 - Not in v1: streaming, push, artifacts, per-peer tokens, follow-ups on an existing task.
+
+## NEXT (Vaios, 2026-09-13) — multi-agent topology
+Multi-peer already works (`PEER_ALLOW` is comma-separated; star topology). Two follow-ups requested:
+1. **Per-peer tokens** — one `PEER_TOKEN` today = one trust circle. Grammar idea:
+   `name=url:token[:trusted]` (token optional → falls back to `PEER_TOKEN`); inbound bearer
+   matched per sender name+host, outbound uses that peer's token.
+2. **Chains (A→B→C)** — loop guard refuses *any* `ask_peer` while an inbound task is pending.
+   Replace with hop tracking: `Message.metadata.via = ["laptop","box"]`; refuse only when the
+   target (or self) is already in `via`; cap depth (e.g. 4). Keep the "answer first" rule for
+   direct A↔B cycles.
