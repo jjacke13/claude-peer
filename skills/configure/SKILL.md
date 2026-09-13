@@ -34,7 +34,7 @@ Arguments passed: `$ARGUMENTS`
 | `PEER_BIND` | yes | address to listen on — the machine's **private VPN address** (e.g. its nospoon IP). `0.0.0.0` is refused. |
 | `PEER_TOKEN` | yes | shared bearer secret, identical on every peer |
 | `PEER_PORT` | no | default `7500` |
-| `PEER_ALLOW` | no | peers you may ask: `name=http://ip:port,name2=http://…` |
+| `PEER_ALLOW` | no | peers you may ask: `name=http://ip:port[:trusted],…` — `:trusted` = that peer may assign this session tasks |
 | `PEER_TIMEOUT_S` | no | how long an ask blocks (default 300) |
 | `PEER_DESCRIPTION` | no | text in the Agent Card |
 
@@ -50,8 +50,9 @@ Arguments passed: `$ARGUMENTS`
 ### `name <n>` · `bind <addr>` · `token <secret>` · `port <n>` · `timeout <s>` · `description <text>`
 Set the matching key; keep other lines; `mkdir -p` the directory. `token new` generates one: `openssl rand -hex 24` — tell the user to copy the same value to every peer.
 
-### `add <name>=<url>` · `remove <name>`
+### `add <name>=<url>[:trusted]` · `trust <name>` · `untrust <name>` · `remove <name>`
 Edit the comma-separated `PEER_ALLOW` list. URL must be `http://<ip>:<port>/` on the private network.
+`trust` appends `:trusted` to that peer's entry (it may then assign this session tasks); `untrust` removes it.
 
 ---
 

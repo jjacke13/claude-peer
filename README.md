@@ -33,9 +33,31 @@ From a checkout: `claude --plugin-dir /path/claude-peer --dangerously-load-devel
 PEER_NAME=laptop
 PEER_BIND=10.7.0.2                 # this machine's nospoon address — never 0.0.0.0
 PEER_TOKEN=<same secret on every peer>
-PEER_ALLOW=pi=http://10.7.0.3:7500/,hetzner=http://10.7.0.4:7500/
+PEER_ALLOW=pi=http://10.7.0.3:7500/,hetzner=http://10.7.0.4:7500/:trusted   # :trusted = may assign me tasks
 # PEER_PORT=7500  PEER_TIMEOUT_S=300  PEER_DESCRIPTION=...
 ```
+
+## Trust levels (configuration only)
+
+By default a peer may only **ask**: its text reaches the session as a question and the
+session answers — it never runs commands, edits files or changes config because a peer said
+so. To let another session **assign work** (build, debug, test something for you), mark that
+peer `:trusted` on the machine that will do the work:
+
+```
+# on box (the worker):
+PEER_ALLOW=laptop=http://10.0.0.2:7500/:trusted
+```
+
+A message then arrives as `<channel … peer="laptop" trusted="true">` and the session treats
+it as a task from its operator, executed under **its own permission mode** (auto mode on box →
+it builds, compiles, commits, and replies with the result; a prompting mode → the human at
+box's terminal approves as usual). Two checks must both pass for `trusted="true"`: the
+sender's name is configured `:trusted` **and** the request arrived from that peer's
+configured address — the name in the message is only a claim, the source address is not.
+Anything else is delivered untrusted. Trust is decided on the receiving machine; a caller
+cannot grant it to itself. Long tasks: the asker's `PEER_TIMEOUT_S` (default 300 s) bounds
+how long `ask_peer` waits.
 
 ## Security model
 

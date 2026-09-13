@@ -46,7 +46,10 @@ test('client helpers', () => {
   expect(r.method).toBe('SendMessage')
   expect(r.params.message.parts).toEqual([{ text: 'hello' }])
   expect(r.params.message.contextId).toBe('c9')
-  expect(parsePeers(' pi = http://10.1.0.2:7500/ , bad, box=https://h:1 ')).toEqual(new Map([['pi', 'http://10.1.0.2:7500'], ['box', 'https://h:1']]))
+  const peers = parsePeers(' pi = http://10.1.0.2:7500/ , bad, box=https://h:1:trusted ')
+  expect([...peers.keys()]).toEqual(['pi', 'box'])
+  expect(peers.get('pi')).toEqual({ url: 'http://10.1.0.2:7500', trusted: false, host: '10.1.0.2' })
+  expect(peers.get('box')).toEqual({ url: 'https://h:1', trusted: true, host: 'h' })
   expect(replyText({ task: { status: { state: 'TASK_STATE_COMPLETED', message: { role: 'ROLE_AGENT', parts: [{ text: 'ans' }] } } } })).toBe('ans')
   expect(replyText({ message: { role: 'ROLE_AGENT', parts: [{ text: 'direct' }] } })).toBe('direct')
   expect(replyText({})).toBe('')
@@ -57,9 +60,9 @@ import { askPeer, makeHandler } from './peer.ts'
 
 test('endpoint: card public, token gate, SendMessage blocks until reply_peer, GetTask, CancelTask, askPeer round-trip', async () => {
   const store = new Store()
-  const inbound: Array<{ id: string; text: string; from: string }> = []
+  const inbound: Array<{ id: string; text: string; from: string; ip: string }> = []
   const cfg = { name: 'A', description: 'test', url: 'http://127.0.0.1:0/', version: '0' }
-  const srv = Bun.serve({ port: 0, fetch: makeHandler(cfg, store, { token: 'secret', waitMs: 3000, onInbound: (t, text, from) => inbound.push({ id: t.id, text, from }) }) })
+  const srv = Bun.serve({ port: 0, fetch: makeHandler(cfg, store, { token: 'secret', waitMs: 3000, onInbound: (t, text, from, ip) => inbound.push({ id: t.id, text, from, ip }), remoteIp: () => '127.0.0.1' }) })
   const base = `http://127.0.0.1:${srv.port}`
   try {
     const card = await (await fetch(`${base}/.well-known/agent-card.json`)).json()
@@ -73,6 +76,7 @@ test('endpoint: card public, token gate, SendMessage blocks until reply_peer, Ge
     expect(r.text).toBe('forty-two')
     expect(inbound[0]!.text).toBe('meaning?')
     expect(inbound[0]!.from).toBe('laptop')
+    expect(inbound[0]!.ip).toBe('127.0.0.1')
     expect(r.contextId).toBe('ctx1')
 
     const post = (m: unknown) => fetch(base, { method: 'POST', headers: { authorization: 'Bearer secret', 'content-type': 'application/json' }, body: JSON.stringify(m) })

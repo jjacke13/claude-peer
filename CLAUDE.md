@@ -14,4 +14,7 @@ over nospoon: `ask_peer box` → answered. Transfer gotcha: bundle clone needs `
   any inbound task is pending. Blocking SendMessage waits `PEER_TIMEOUT_S` then returns WORKING.
 - Smoke script (two stdio servers on loopback, driven over JSON-RPC): see git history / scratch;
   `bun test` covers protocol + endpoint.
+- **Trust levels (2026-09-13):** `PEER_ALLOW=name=url:trusted` → inbound from that name AND that host
+  gets `trusted="true"` meta → session treats it as an operator task under its own permission mode.
+  Untrusted = answers only. Source-IP check via `server.requestIP` (name is a claim).
 - Not in v1: streaming, push, artifacts, per-peer tokens, follow-ups on an existing task.

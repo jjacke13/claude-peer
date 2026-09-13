@@ -136,12 +136,16 @@ export function sendMessageRequest(text: string, contextId?: string, from?: stri
   return { jsonrpc: '2.0', id: newId(), method: 'SendMessage', params: { message: msg, configuration: { returnImmediately: false } } }
 }
 
-// Peers: "name=http://host:port, name2=http://…" (COMMA-separated; names [A-Za-z0-9_-]).
-export function parsePeers(raw: string | undefined): Map<string, string> {
-  const out = new Map<string, string>()
+// Peers: "name=http://host:port[:trusted], …" (COMMA-separated; names [A-Za-z0-9_-]).
+// trusted = that peer may assign us tasks, not only ask questions (see README "Trust levels").
+export type Peer = { url: string; trusted: boolean; host: string }
+export function parsePeers(raw: string | undefined): Map<string, Peer> {
+  const out = new Map<string, Peer>()
   for (const item of (raw ?? '').split(',')) {
-    const m = item.trim().match(/^([A-Za-z0-9_-]+)\s*=\s*(https?:\/\/\S+)$/)
-    if (m) out.set(m[1]!, m[2]!.replace(/\/+$/, ''))
+    const m = item.trim().match(/^([A-Za-z0-9_-]+)\s*=\s*(https?:\/\/[^\s:]+(?::\d+)?\/?)(?::(trusted))?$/)
+    if (!m) continue
+    const url = m[2]!.replace(/\/+$/, '')
+    out.set(m[1]!, { url, trusted: m[3] === 'trusted', host: new URL(url).hostname })
   }
   return out
 }
