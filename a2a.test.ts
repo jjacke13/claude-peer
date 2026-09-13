@@ -99,3 +99,23 @@ test('endpoint: card public, token gate, SendMessage blocks until reply_peer, Ge
     s2.stop(true)
   } finally { srv.stop(true) }
 })
+
+import { localPeers, register } from './local.ts'
+import { mkdtempSync, readdirSync } from 'fs'
+import { tmpdir } from 'os'
+import { join as pjoin } from 'path'
+
+test('local registry: live peers listed as trusted, stale removed, self skipped, name clash refused', () => {
+  const dir = mkdtempSync(pjoin(tmpdir(), 'peer-local-'))
+  const alive = (pid: number) => pid !== 999
+  const off = register(dir, { name: 'main', url: 'http://10.0.0.2:7500/', pid: 1, project: '/p/main', ts: '' }, alive)
+  register(dir, { name: 'hades', url: 'http://127.0.0.1:7511/', pid: 2, project: '/p/hades', ts: '' }, alive)
+  register(dir, { name: 'dead', url: 'http://127.0.0.1:7512/', pid: 999, project: '/p/dead', ts: '' }, alive)
+  const seen = localPeers(dir, 'main', alive)
+  expect([...seen.keys()]).toEqual(['hades'])
+  expect(seen.get('hades')).toEqual({ url: 'http://127.0.0.1:7511/', trusted: true, host: '127.0.0.1', project: '/p/hades' })
+  expect(readdirSync(dir).sort()).toEqual(['hades.json', 'main.json'])   // dead.json swept
+  expect(() => register(dir, { name: 'hades', url: 'http://127.0.0.1:7513/', pid: 3, project: '/p/other', ts: '' }, alive)).toThrow(/already running/)
+  off()
+  expect(localPeers(dir, 'hades', alive).size).toBe(0)
+})

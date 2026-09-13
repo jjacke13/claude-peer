@@ -43,7 +43,7 @@ Arguments passed: `$ARGUMENTS`
 ## Dispatch on arguments
 
 ### No args — status
-1. `cat <state-dir>/.env` (mask the token: show first 4 chars). Say "not configured" if absent.
+1. `cat <state-dir>/.env` (mask the token: show first 4 chars). Say "not configured" if absent. Also `cat ./.claude/peer.env` if present (project override) and `ls <state-dir>/local/` (live local sessions).
 2. `ip -brief addr` — list candidate bind addresses; flag which look like VPN/private (10.x, 100.64.x, fd..).
 3. For each peer in `PEER_ALLOW`: `curl -s --max-time 3 "${url%/}/.well-known/agent-card.json"` (strip any trailing slash first) and report reachable/unreachable + card name.
 
@@ -53,6 +53,19 @@ Set the matching key; keep other lines; `mkdir -p` the directory. `token new` ge
 ### `add <name>=<url>[:trusted]` · `trust <name>` · `untrust <name>` · `remove <name>`
 Edit the comma-separated `PEER_ALLOW` list. URL must be `http://<ip>:<port>/` on the private network.
 `trust` appends `:trusted` to that peer's entry (it may then assign this session tasks); `untrust` removes it.
+
+### `project <name> <port>` — make THIS project a local worker session
+Write `./.claude/peer.env` in the current project (create the directory):
+```
+PEER_NAME=<name>
+PEER_BIND=127.0.0.1
+PEER_PORT=<port>
+```
+The token and everything else are inherited from the global file. Sessions launched in that
+directory bind `127.0.0.1:<port>` and appear automatically in every other local session's
+`peers` list (as trusted — same user, same machine) via `<state-dir>/local/<name>.json`, which
+is removed when the session exits. Pick a unique name and a free port per project (7501, 7502…).
+Tell the user to restart the session in that project for it to take effect.
 
 ---
 

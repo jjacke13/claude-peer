@@ -42,6 +42,20 @@ PEER_ALLOW=laptop=http://10.7.0.2:7500/
 ```
 Or in a session: `/peer:configure name laptop`, `bind 10.7.0.2`, `token <token>`, `add pi=http://10.7.0.3:7500/`.
 
+## 2b. Local worker sessions (same machine, optional)
+
+To let a main session delegate to sessions in other repos on this machine:
+
+1. In each worker repo: `/peer:configure project <name> <port>` → `./.claude/peer.env` with
+   `PEER_NAME`, `PEER_BIND=127.0.0.1`, `PEER_PORT`. Unique name + free port per repo.
+2. Launch Claude in that repo with the plugin (same flag as §3). It registers itself in
+   `~/.claude/channels/peer/local/`.
+3. In the main session, `peers` now lists it as `(local session in <dir>, trusted)`; `ask_peer <name>`
+   assigns it work. Nothing to add to `PEER_ALLOW`.
+
+Check: `ls ~/.claude/channels/peer/local/` shows one JSON per running session; a stale file
+(pid gone) disappears the next time any session lists peers.
+
 ## 3. Launch (each machine)
 
 ```bash

@@ -13,26 +13,35 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { existsSync, mkdirSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
-import { TaskStore, parsePeers, type Task } from './a2a.ts'
+import { TaskStore, parsePeers, type Peer, type Task } from './a2a.ts'
+import { localPeers, register } from './local.ts'
 import { askPeer, makeHandler } from './peer.ts'
 
 const STATE_DIR = process.env.PEER_STATE_DIR
   ?? join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'channels', 'peer')
 const ENV_FILE = join(STATE_DIR, '.env')
+const LOCAL_DIR = join(STATE_DIR, 'local')
+const PROJECT_DIR = process.env.CLAUDE_PROJECT_DIR ?? process.cwd()
+const PROJECT_ENV = join(PROJECT_DIR, '.claude', 'peer.env')   // per-project override (name/port/bind)
 const log = (line: string) => process.stderr.write(`peer: ${line}\n`)
 
-// .env → process.env (real env wins). KEY=value, # comments, quotes — same rules as claude-simplex.
+// KEY=value files → process.env; first setter wins: real env > project .claude/peer.env > global .env.
+// # comments, quotes — same rules as claude-simplex.
+function loadEnv(file: string): boolean {
+  if (!existsSync(file)) return false
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    const m = line.match(/^\s*(?:export\s+)?([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/)
+    if (!m || m[1]! in process.env) continue
+    const q = m[2]!.match(/^(["'])(.*)\1(?:\s+#.*)?$/)
+    process.env[m[1]!] = q ? q[2]! : m[2]!.replace(/\s+#.*$/, '')
+  }
+  return true
+}
 try {
   mkdirSync(STATE_DIR, { recursive: true })
-  if (existsSync(ENV_FILE)) {
-    for (const line of readFileSync(ENV_FILE, 'utf8').split('\n')) {
-      const m = line.match(/^\s*(?:export\s+)?([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/)
-      if (!m || m[1]! in process.env) continue
-      const q = m[2]!.match(/^(["'])(.*)\1(?:\s+#.*)?$/)
-      process.env[m[1]!] = q ? q[2]! : m[2]!.replace(/\s+#.*$/, '')
-    }
-  }
-} catch (e) { log(`cannot read state dir ${STATE_DIR}: ${e}`); process.exit(1) }
+  if (loadEnv(PROJECT_ENV)) log(`project config ${PROJECT_ENV}`)
+  loadEnv(ENV_FILE)
+} catch (e) { log(`cannot read config: ${e}`); process.exit(1) }
 
 const need = (k: string) => { const v = process.env[k]?.trim(); if (!v) { log(`${k} required — set it in ${ENV_FILE} (or /peer:configure)`); process.exit(1) } return v }
 const NAME = need('PEER_NAME')
@@ -43,6 +52,8 @@ if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) { log(`PEER_PORT must b
 if (BIND === '0.0.0.0' || BIND === '::' || BIND === '*') { log('PEER_BIND must be a specific private address (your nospoon IP), never 0.0.0.0'); process.exit(1) }
 const TIMEOUT_MS = 1000 * (Number(process.env.PEER_TIMEOUT_S) || 300)
 const PEERS = parsePeers(process.env.PEER_ALLOW)
+// Configured peers plus live sessions on this machine (registry, read on every call). Explicit config wins.
+const allPeers = (): Map<string, Peer> => new Map<string, Peer>([...localPeers(LOCAL_DIR, NAME), ...PEERS])
 const trustedNames = [...PEERS].filter(([, p]) => p.trusted).map(([n]) => n)
 const DESCRIPTION = process.env.PEER_DESCRIPTION || `Claude Code session "${NAME}"`
 const URL_ = `http://${BIND.includes(':') ? `[${BIND}]` : BIND}:${PORT}/`
@@ -98,8 +109,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       case 'ask_peer': {
         const pending = store.pending()
         if (pending.length) throw new Error(`loop guard: answer the pending peer question first with reply_peer (task ${pending[0]!.id} from ${peerOf(pending[0]!.id)}); a short "cannot answer" reply is fine if you have nothing better`)
-        const name = String(a.peer ?? ''), url = PEERS.get(name)?.url
-        if (!url) throw new Error(`unknown peer "${name}" — configured: ${[...PEERS.keys()].join(', ') || 'none'}`)
+        const name = String(a.peer ?? ''), peers = allPeers(), url = peers.get(name)?.url
+        if (!url) throw new Error(`unknown peer "${name}" — available: ${[...peers.keys()].join(', ') || 'none'}`)
         const text = String(a.text ?? '').trim()
         if (!text) throw new Error('text is empty')
         const r = await askPeer(url, TOKEN, text, typeof a.context_id === 'string' ? a.context_id : undefined, TIMEOUT_MS, NAME)
@@ -107,8 +118,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       }
       case 'peers':
         return ok([
-          `me: ${NAME} at ${URL_}`,
+          `me: ${NAME} at ${URL_} (${PROJECT_DIR})`,
           ...[...PEERS].map(([n, p]) => `${n} = ${p.url}${p.trusted ? ' (trusted: may assign tasks)' : ''}`),
+          ...[...localPeers(LOCAL_DIR, NAME)].filter(([n]) => !PEERS.has(n)).map(([n, p]) => `${n} = ${p.url} (local session in ${p.project}, trusted)`),
           ...store.pending().map(t => `pending: task ${t.id} from ${peerOf(t.id)}: ${t.history[0]?.parts[0]?.text?.slice(0, 80)}`),
         ].join('\n'))
       default: throw new Error(`unknown tool ${req.params.name}`)
@@ -122,7 +134,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 function onInbound(task: Task, text: string, peer: string, remoteIp: string): void {
   // Trusted only if the user configured that name as trusted AND the request came from that
   // peer's configured host — the name in the message is a claim, the source address is not.
-  const cfg = PEERS.get(peer)
+  const cfg = allPeers().get(peer)
   const trusted = !!cfg?.trusted && !!remoteIp && (remoteIp === cfg.host || remoteIp === `::ffff:${cfg.host}`)
   if (cfg?.trusted && !trusted) log(`task ${task.id.slice(0, 8)} claims trusted peer "${peer}" but came from ${remoteIp || '?'} (expected ${cfg.host}) — treated as untrusted`)
   mcp.notification({
@@ -137,6 +149,10 @@ const http = Bun.serve({
   error(e) { log(`http error: ${e}`); return new Response('error', { status: 500 }) },
 })
 
+let unregister = () => {}
+try { unregister = register(LOCAL_DIR, { name: NAME, url: URL_, pid: process.pid, project: PROJECT_DIR, ts: new Date().toISOString() }) }
+catch (e) { log(e instanceof Error ? e.message : String(e)); http.stop(true); process.exit(1) }
+
 await mcp.connect(new StdioServerTransport())
 log(`ready: ${NAME} listening on ${URL_} · peers: ${[...PEERS.keys()].join(', ') || 'none'}${trustedNames.length ? ` · trusted: ${trustedNames.join(', ')}` : ''}`)
 
@@ -145,6 +161,7 @@ function shutdown(): void {
   if (down) return
   down = true
   log('shutting down')
+  unregister()
   http.stop(true)
   setTimeout(() => process.exit(0), 200)
 }

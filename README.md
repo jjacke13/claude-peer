@@ -59,6 +59,29 @@ Anything else is delivered untrusted. Trust is decided on the receiving machine;
 cannot grant it to itself. Long tasks: the asker's `PEER_TIMEOUT_S` (default 300 s) bounds
 how long `ask_peer` waits.
 
+## Local sessions on one machine (v0.3)
+
+One "main" session can drive worker sessions in other repos on the same box, with no
+`PEER_ALLOW` edits. In each worker project:
+
+```
+/peer:configure project hades 7511      # writes ./.claude/peer.env
+```
+
+```
+# ./.claude/peer.env — overrides the global file for sessions started in this directory
+PEER_NAME=hades
+PEER_BIND=127.0.0.1
+PEER_PORT=7511
+```
+
+Precedence: real environment > `./.claude/peer.env` (found via `CLAUDE_PROJECT_DIR`) > global
+`.env`. The token stays in the global file only. While a session runs it holds
+`~/.claude/channels/peer/local/<name>.json` (url, pid, project); every other local session
+lists it in `peers` as **trusted** (same user, same machine) and can `ask_peer` it. The entry is
+removed on exit; stale ones (dead pid) are swept on sight. A second session with a name already
+live refuses to start. Explicit `PEER_ALLOW` entries win over registry entries of the same name.
+
 ## Security model
 
 Transport security comes from the VPN (encryption + who can reach the address). The bearer
