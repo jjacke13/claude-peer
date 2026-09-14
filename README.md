@@ -112,3 +112,17 @@ Two-machine smoke: on each, configure, launch, `peers` → both reachable; from 
 ## Not in v1
 SSE streaming (`SendStreamingMessage`), push notifications, artifacts/files, per-peer
 tokens, discovery, TLS (VPN provides it), follow-up messages on an existing task.
+
+### No "trust the plugins" prompt at launch
+
+`--dangerously-load-development-channels` asks for confirmation every launch. Once the plugin is on
+the managed channel allowlist, plain `--channels plugin:peer@claude-peer` loads it silently
+(`bin/worker` picks the flag automatically). Linux: `/etc/claude-code/managed-settings.json`
+(root-owned; on NixOS `environment.etc."claude-code/managed-settings.json".text = builtins.toJSON { … }`):
+
+```json
+{ "channelsEnabled": true,
+  "allowedChannelPlugins": [ { "marketplace": "claude-peer", "plugin": "peer" } ] }
+```
+
+Setting `allowedChannelPlugins` replaces Anthropic's default allowlist — list every channel plugin you use.

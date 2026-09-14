@@ -25,9 +25,13 @@ case "${1:-}" in
     resume=()
     ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$slug"/*.jsonl >/dev/null 2>&1 && resume=(--continue)
     cd "$here"
+    # No "trust the plugins" prompt when the plugin is on the managed allowlist
+    # (/etc/claude-code/managed-settings.json → allowedChannelPlugins); otherwise the dev flag.
+    load=--dangerously-load-development-channels
+    grep -qs '"marketplace": *"claude-peer", *"plugin": *"peer"' /etc/claude-code/managed-settings.json && load=--channels
     exec claude --permission-mode auto "${resume[@]}" \
       --settings '{"enabledPlugins":{"talk@claude-talk":false,"simplex@claude-simplex":false}}' \
-      --dangerously-load-development-channels plugin:peer@claude-peer "$@" ;;
+      "$load" plugin:peer@claude-peer "$@" ;;
   --help|-h) sed -n '2,11p' "$0"; exit 0 ;;
 esac
 
