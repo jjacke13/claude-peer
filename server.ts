@@ -12,9 +12,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { existsSync, mkdirSync, readFileSync } from 'fs'
 import { homedir } from 'os'
-import { join } from 'path'
+import { basename, join } from 'path'
 import { TaskStore, parsePeers, type Peer, type Task } from './a2a.ts'
-import { localPeers, register } from './local.ts'
+import { autoIdentity, localPeers, register } from './local.ts'
 import { BLOCK_MS, askPeer, makeHandler } from './peer.ts'
 
 const STATE_DIR = process.env.PEER_STATE_DIR
@@ -42,6 +42,23 @@ try {
   if (loadEnv(PROJECT_ENV)) log(`project config ${PROJECT_ENV}`)
   loadEnv(ENV_FILE)
 } catch (e) { log(`cannot read config: ${e}`); process.exit(1) }
+
+// PEER_HOME (global .env, comma-separated dirs): the sessions allowed to use the global identity
+// (PEER_NAME/PEER_BIND/PEER_PORT — the main session on the VPN). Any other session without its own
+// .claude/peer.env gets an automatic local identity — name = the project directory's name, 127.0.0.1,
+// a free port — so a session opened by hand in some repo never clashes with the main one and simply
+// shows up in `peers` as a local worker.
+const AUTO = autoIdentity(process.env.PEER_HOME, PROJECT_DIR, existsSync(PROJECT_ENV), homedir())
+if (AUTO) {
+  process.env.PEER_NAME = AUTO
+  process.env.PEER_BIND = '127.0.0.1'
+  process.env.PEER_PORT = String(freePort())
+  log(`auto identity: ${AUTO} on 127.0.0.1:${process.env.PEER_PORT} (outside PEER_HOME, no .claude/peer.env)`)
+}
+function freePort(): number {
+  const probe = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => new Response('') })
+  const port = probe.port; probe.stop(true); return port
+}
 
 const need = (k: string) => { const v = process.env[k]?.trim(); if (!v) { log(`${k} required — set it in ${ENV_FILE} (or /peer:configure)`); process.exit(1) } return v }
 const NAME = need('PEER_NAME')

@@ -35,6 +35,9 @@ PEER_BIND=10.7.0.2                 # this machine's nospoon address — never 0.
 PEER_TOKEN=<same secret on every peer>
 PEER_ALLOW=pi=http://10.7.0.3:7500/,hetzner=http://10.7.0.4:7500/:trusted   # :trusted = may assign me tasks
 # PEER_PORT=7500  PEER_TIMEOUT_S=300  PEER_DESCRIPTION=...
+# PEER_HOME=~/Desktop/repos/claudia   # only sessions started here use this identity; any other session
+#                                     # without .claude/peer.env gets an automatic local one (name = repo dir,
+#                                     # 127.0.0.1, free port) and shows up in `peers` as a local worker
 ```
 
 ## Trust levels (configuration only)

@@ -2,7 +2,7 @@
 // runs, so sessions on one box find each other without editing PEER_ALLOW. Only this user can
 // write the directory, so a live entry is trusted (it IS the user's own session).
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import { basename, join } from 'path'
 import type { Peer } from './a2a.ts'
 
 export type LocalEntry = { name: string; url: string; pid: number; project: string; ts: string }
@@ -11,6 +11,16 @@ export type LocalPeer = Peer & { project: string }
 export const pidAlive = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch { return false } }
 
 // Register this session; returns the unregister function. Refuses a name another live session holds.
+// PEER_HOME decides who keeps the global identity. Returns the automatic local name for a session that
+// is outside every PEER_HOME dir and has no project peer.env; undefined = use the configured identity.
+// Pure, so it is testable: `home` expands a leading ~ in PEER_HOME.
+export function autoIdentity(peerHome: string | undefined, projectDir: string, hasProjectEnv: boolean, home: string): string | undefined {
+  const dirs = (peerHome ?? '').split(',').map(d => d.trim().replace(/^~(?=\/|$)/, home).replace(/\/+$/, '')).filter(Boolean)
+  if (!dirs.length || hasProjectEnv || dirs.includes(projectDir.replace(/\/+$/, ''))) return undefined
+  const name = basename(projectDir).toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
+  return name || 'session'
+}
+
 export function register(dir: string, e: LocalEntry, alive = pidAlive): () => void {
   mkdirSync(dir, { recursive: true })
   const file = join(dir, `${e.name}.json`)

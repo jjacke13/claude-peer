@@ -56,6 +56,11 @@ Set the matching key; keep other lines; `mkdir -p` the directory. `token new` ge
 Edit the comma-separated `PEER_ALLOW` list. URL must be `http://<ip>:<port>/` on the private network.
 `trust` appends `:trusted` to that peer's entry (it may then assign this session tasks); `untrust` removes it.
 
+### `home <dir>[,<dir>]|off` — pin the global identity to the main session
+Sets `PEER_HOME` in the global `.env`. Sessions started outside those dirs that have no `.claude/peer.env`
+get an automatic identity (name = the repo directory name, `127.0.0.1`, a free port) instead of clashing
+with the main session over `PEER_NAME`/`PEER_PORT`; they appear in `peers` as local workers. `home off` removes it.
+
 ### `project <name> <port>` — make THIS project a local worker session
 Write `./.claude/peer.env` in the current project (create the directory):
 ```
