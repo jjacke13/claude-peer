@@ -155,7 +155,16 @@ export function replyText(result: any): string {
   if (result?.message) return textOf(result.message)
   const t = result?.task
   if (!t) return ''
-  return textOf(t.status?.message) || textOf([...(t.history ?? [])].reverse().find((m: Message) => m.role === 'ROLE_AGENT'))
+  return textOf(t.status?.message)
+    || textOf([...(t.history ?? [])].reverse().find((m: Message) => m.role === 'ROLE_AGENT'))
+    || (t.artifacts ?? []).map((a: { parts?: Message['parts'] }) => textOf(a as Message)).filter(Boolean).join('\n')
+}
+
+// Same message as SendMessage, streamed (SSE). Peers that ignore returnImmediately (hermes)
+// still send the task id as the first event, so a long job never leaves us without a handle.
+export function streamMessageRequest(text: string, contextId?: string, from?: string) {
+  const { params, ...rest } = sendMessageRequest(text, contextId, from)
+  return { ...rest, method: 'SendStreamingMessage', params: { message: params.message } }
 }
 
 export function getTaskRequest(id: string) {

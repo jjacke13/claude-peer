@@ -112,9 +112,18 @@ bun test                       # protocol + endpoint, in-process
 Two-machine smoke: on each, configure, launch, `peers` → both reachable; from A:
 "ask pi what time it is" → B's session sees the question, answers, A prints it.
 
+## Streaming (outbound, 0.4.1)
+When a peer's agent card advertises `capabilities.streaming`, `ask_peer` sends
+`SendStreamingMessage`, takes the task id from the first event, treats keepalives as progress,
+and reads the result with `GetTask`; if the stream drops mid-task it falls back to polling
+`GetTask` until `PEER_TIMEOUT_S`. Needed for peers that ignore `returnImmediately` and hold a
+blocking `SendMessage` open for the whole job (Hermes Agent): the old path aborted after ~130 s and
+lost the task id. Other peers keep the blocking-then-poll path. This plugin's own endpoint does
+not serve streaming.
+
 ## Not in v1
-SSE streaming (`SendStreamingMessage`), push notifications, artifacts/files, per-peer
-tokens, discovery, TLS (VPN provides it), follow-up messages on an existing task.
+Serving SSE streaming (outbound only, see above), push notifications, files (artifact *text* is read),
+per-peer tokens, discovery, TLS (VPN provides it), follow-up messages on an existing task.
 
 ### No "trust the plugins" prompt at launch
 
