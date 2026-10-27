@@ -139,13 +139,14 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           lastProgress = Date.now()
           mcp.notification({ method: 'notifications/progress', params: { progressToken: token, progress: Math.round((Date.now() - t0) / 1000), message: `${name} still working on task ${taskId.slice(0, 8)} (${Math.round((Date.now() - t0) / 60_000)} min)` } }).catch(() => {})
         }
-        const r = await askPeer(url, TOKEN, text, typeof a.context_id === 'string' ? a.context_id : undefined, TIMEOUT_MS, NAME, undefined, onPoll)
+        const ctx = typeof a.context_id === 'string' ? a.context_id : peers.get(name)?.context   // explicit wins over PEER_ALLOW :context=
+        const r = await askPeer(url, TOKEN, text, ctx, TIMEOUT_MS, NAME, undefined, onPoll)
         return ok(`${name} answered (context_id ${r.contextId ?? '-'}):\n\n${r.text}`)
       }
       case 'peers':
         return ok([
           `me: ${NAME} at ${URL_} (${PROJECT_DIR})`,
-          ...[...PEERS].map(([n, p]) => `${n} = ${p.url}${p.trusted ? ' (trusted: may assign tasks)' : ''}`),
+          ...[...PEERS].map(([n, p]) => `${n} = ${p.url}${p.trusted ? ' (trusted: may assign tasks)' : ''}${p.context ? ` (context ${p.context})` : ''}`),
           ...[...localPeers(LOCAL_DIR, NAME)].filter(([n]) => !PEERS.has(n)).map(([n, p]) => `${n} = ${p.url} (local session in ${p.project}, trusted)`),
           ...store.pending().map(t => `pending: task ${t.id} from ${peerOf(t.id)}: ${t.history[0]?.parts[0]?.text?.slice(0, 80)}`),
         ].join('\n'))

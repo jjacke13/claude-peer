@@ -138,14 +138,17 @@ export function sendMessageRequest(text: string, contextId?: string, from?: stri
 
 // Peers: "name=http://host:port[:trusted], …" (COMMA-separated; names [A-Za-z0-9_-]).
 // trusted = that peer may assign us tasks, not only ask questions (see README "Trust levels").
-export type Peer = { url: string; trusted: boolean; host: string; local?: boolean }   // local = this machine's registry
+// context = default contextId for ask_peer to that peer (`:context=<id>`), pinning one conversation.
+export type Peer = { url: string; trusted: boolean; host: string; local?: boolean; context?: string }   // local = this machine's registry
 export function parsePeers(raw: string | undefined): Map<string, Peer> {
   const out = new Map<string, Peer>()
   for (const item of (raw ?? '').split(',')) {
-    const m = item.trim().match(/^([A-Za-z0-9_-]+)\s*=\s*(https?:\/\/[^\s:]+(?::\d+)?\/?)(?::(trusted))?$/)
+    const m = item.trim().match(/^([A-Za-z0-9_-]+)\s*=\s*(https?:\/\/[^\s:]+(?::\d+)?\/?)((?::(?:trusted|context=[A-Za-z0-9_.-]+))*)$/)
     if (!m) continue
     const url = m[2]!.replace(/\/+$/, '')
-    out.set(m[1]!, { url, trusted: m[3] === 'trusted', host: new URL(url).hostname })
+    const opts = m[3]!.split(':').filter(Boolean)
+    const context = opts.find(o => o.startsWith('context='))?.slice('context='.length)
+    out.set(m[1]!, { url, trusted: opts.includes('trusted'), host: new URL(url).hostname, ...(context ? { context } : {}) })
   }
   return out
 }
